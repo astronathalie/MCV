@@ -525,12 +525,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     file_dir = os.path.dirname(args.path)
+
+    # grab .fts, .fit and .fits
+    files = []
+    for ext in ('fts', 'fit', 'fits'):
+        files.extend(glob.glob(os.path.join(file_dir, f'*.{ext}')))
+
+    #remove duplicates & sort
+    files = sorted(set(files))
     
-    glob_path = os.path.join(file_dir, '*.fts')
-
-    files = glob.glob(glob_path)
-    print(files)
-
+    print("Found files:", files)
+    
     if args.rewrite:
         for file in files:
             im = fits.open(file)
