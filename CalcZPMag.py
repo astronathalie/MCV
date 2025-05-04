@@ -56,8 +56,8 @@ class SDSS_catalog:
         ra_min, ra_max, dec_min, dec_max = self.get_image_bounds(wcs)
 
         # Get the exposure time
-        self.header = fits.getheader(file)
-        exp_time = self.header['EXPTIME']
+        #self.header = fits.getheader(file)
+        #exp_time = self.header['EXPTIME']
 
         # Get the magnitude range and mag limits
         #if exp_time < 60:
@@ -307,7 +307,7 @@ class ImageProcessor:
     def ap_phot_mags(self, pixel_positions):
 
         #Calculate background value for the whole image
-        img_bkg_mean, img_bkg_median, img_bkg_std = sigma_clipped_stats(self.data, sigma=3.0)
+        #img_bkg_mean, img_bkg_median, img_bkg_std = sigma_clipped_stats(self.data, sigma=3.0)
 
         FWHM = float(str(self.header['FWHM']))
 
@@ -324,7 +324,7 @@ class ImageProcessor:
         saturated_sources = []
 
         # Check for pixel-level saturation
-        for i, pos in enumerate(pixel_positions):
+        for i, _ in enumerate(pixel_positions):
             aperture_mask = apertures.to_mask(method='center')[i]  # Get mask for the aperture
             aperture_data = aperture_mask.multiply(self.data)  # Extract aperture pixels
             aperture_pixels = aperture_data[aperture_mask.data > 0]  # Only valid pixels within the mask
@@ -346,7 +346,7 @@ class ImageProcessor:
             sky_mask = sky_annulus.to_mask(method='center')[i]
             sky_data = sky_mask.multiply(self.data)
             sky_data_1d = sky_data[sky_mask.data > 0]
-            mean, median, std = sigma_clipped_stats(sky_data_1d, sigma=3.0)
+            mean, _, _ = sigma_clipped_stats(sky_data_1d, sigma=3.0)
             bkgmean.append(mean)
 
         egain = self.header['EGAIN']
@@ -535,7 +535,7 @@ if __name__ == "__main__":
     files = sorted(set(files))
     
     print("Found files:", files)
-    
+
     if args.rewrite:
         for file in files:
             im = fits.open(file)
