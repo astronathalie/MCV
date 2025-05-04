@@ -474,14 +474,14 @@ class ImageProcessor:
             plt.plot(ap_maglist, p(ap_maglist))
             plt.xlabel('Instrumental Magnitude')
             plt.ylabel('SDSS Magnitude')
-            plt.title('Instrumental vs. SDSS Magnitudes')
+            plt.title('SDSS vs. Instrumental Magnitudes')
             plt.show()
         
         if args.plotZP:
             plt.scatter(sdss_maglist, zmaglist)
             plt.xlabel('SDSS Magnitude')
             plt.ylabel('ZMAG')
-            plt.title('SDSS vs. ZMAG')
+            plt.title('ZMAG vs. SDSS')
             plt.show()
 
         calc_zmag = round(sum(zmaglist) / float(len(zmaglist)), 3)
@@ -520,6 +520,8 @@ if __name__ == "__main__":
     parser.add_argument("--plotZP", action="store_true", help="Plot the SDSS magnitude vs the ZPMAG.")
     parser.add_argument("--PS1", action="store_true", help="Use Pan-STARRS instead of SDSS.")
     parser.add_argument("--rewrite", action="store_true", help="Rewrite over a previous ZPMAG file with the new ZPMAG value.")
+    parser.add_argument("--writeAVG", action="store_true", help="Write the average ZPMAG to the FITS header.")
+    parser.add_argument("--rewriteAVG", action="store_true", help="Rewrite over a previous ZPMAG file with the new average ZPMAG value.")
     args = parser.parse_args()
 
     file_dir = os.path.dirname(args.path)
@@ -538,11 +540,28 @@ if __name__ == "__main__":
             fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
             calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
             if args.show:
-                _, _, stars = processor.zmag_calc()
+                _, _, _, _, stars = processor.zmag_calc()
                 processor.plot_stars(stars)
             with fits.open(file, mode="update") as hdul:
                 hdul[0].header['ZPMAG'] = lin_fit_zmag
                 hdul[0].header['Z_ERR'] = fit_err
+
+            print(f"Average ZMAG: {calc_zmag} ± {zmag_err}")
+            print(f"Linear Fit ZMAG: {lin_fit_zmag} ± {fit_err}")
+    elif args.rewriteAVG:
+        for file in files:
+            im = fits.open(file)
+            print(f"Calculating ZPMAG for {file}")
+            processor = ImageProcessor(file)
+
+            fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
+            calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
+            if args.show:
+                _, _, _, _, stars = processor.zmag_calc()
+                processor.plot_stars(stars)
+            with fits.open(file, mode="update") as hdul:
+                hdul[0].header['ZPMAG'] = calc_zmag
+                hdul[0].header['Z_ERR'] = zmag_err
 
             print(f"Average ZMAG: {calc_zmag} ± {zmag_err}")
             print(f"Linear Fit ZMAG: {lin_fit_zmag} ± {fit_err}")
@@ -559,7 +578,7 @@ if __name__ == "__main__":
                 processor = ImageProcessor(file)
 
                 fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
-                calc_zmag, lin_fit_zmag, _ = processor.zmag_calc()
+                calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
                 if args.show:
                     _, _, _, _, stars = processor.zmag_calc()
                     processor.plot_stars(stars)
@@ -567,6 +586,10 @@ if __name__ == "__main__":
                     with fits.open(file, mode="update") as hdul:
                         hdul[0].header['ZPMAG'] = lin_fit_zmag
                         hdul[0].header['Z_ERR'] = fit_err
+                if args.writeAVG:
+                    with fits.open(file, mode="update") as hdul:
+                        hdul[0].header['ZPMAG'] = calc_zmag
+                        hdul[0].header['Z_ERR'] = zmag_err
 
                 print(f"Average ZMAG: {calc_zmag} ± {zmag_err}")
                 print(f"Linear Fit ZMAG: {lin_fit_zmag} ± {fit_err}")
