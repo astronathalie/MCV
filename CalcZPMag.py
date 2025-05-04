@@ -465,7 +465,7 @@ class ImageProcessor:
         p = np.poly1d(fit)
         fiterr = np.sqrt(np.sum((p(ap_maglist) - sdss_maglist)**2) / (len(sdss_maglist) - 2))
 
-        if len(zmaglist_new) < 3:
+        if len(zmaglist_new) < 5:
             print('Not enough sources to calculate ZMAG')
             return 'Not enough sources to calculate ZMAG'
 
@@ -485,10 +485,12 @@ class ImageProcessor:
             plt.show()
 
         calc_zmag = round(sum(zmaglist) / float(len(zmaglist)), 3)
+        calc_zmag_err = round(np.std(zmaglist), 3)
         #calc_zmag = round(np.median(zmaglist), 3)
         lin_fit_zmag = round(p[0], 3)
+        lin_fit_zmag_err = round(fiterr, 3)
 
-        return calc_zmag, lin_fit_zmag, sdss_positions
+        return calc_zmag, calc_zmag_err, lin_fit_zmag, lin_fit_zmag_err, sdss_positions
 
     def plot_stars(self, pixel_positions):
         self.header = fits.getheader(file)
@@ -534,16 +536,16 @@ if __name__ == "__main__":
             processor = ImageProcessor(file)
 
             fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
-            calc_zmag, lin_fit_zmag, _ = processor.zmag_calc()
+            calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
             if args.show:
                 _, _, stars = processor.zmag_calc()
                 processor.plot_stars(stars)
-            if args.write:
-                with fits.open(file, mode="update") as hdul:
-                    hdul[0].header['ZPMAG'] = lin_fit_zmag
+            with fits.open(file, mode="update") as hdul:
+                hdul[0].header['ZPMAG'] = lin_fit_zmag
+                hdul[0].header['Z_ERR'] = fit_err
 
-            print(f"Average ZMAG: {calc_zmag}")
-            print(f"Linear Fit ZMAG: {lin_fit_zmag}")
+            print(f"Average ZMAG: {calc_zmag} ± {zmag_err}")
+            print(f"Linear Fit ZMAG: {lin_fit_zmag} ± {fit_err}")
     else:
     # check if the file has ZPMAG in the header
         for file in files:
@@ -559,12 +561,13 @@ if __name__ == "__main__":
                 fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
                 calc_zmag, lin_fit_zmag, _ = processor.zmag_calc()
                 if args.show:
-                    _, _, stars = processor.zmag_calc()
+                    _, _, _, _, stars = processor.zmag_calc()
                     processor.plot_stars(stars)
                 if args.write:
                     with fits.open(file, mode="update") as hdul:
                         hdul[0].header['ZPMAG'] = lin_fit_zmag
+                        hdul[0].header['Z_ERR'] = fit_err
 
-                print(f"Average ZMAG: {calc_zmag}")
-                print(f"Linear Fit ZMAG: {lin_fit_zmag}")
+                print(f"Average ZMAG: {calc_zmag} ± {zmag_err}")
+                print(f"Linear Fit ZMAG: {lin_fit_zmag} ± {fit_err}")
     
