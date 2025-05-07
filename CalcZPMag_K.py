@@ -22,7 +22,7 @@ import math
 from scipy.optimize import curve_fit
 
 class SDSS_catalog:
-    def __init__(self, PS = False):
+    def __init__(self, PS=False):
         self.PS = PS
         pass
 
@@ -56,7 +56,6 @@ class SDSS_catalog:
         # Get the bounds of the image in sky coordinates
         PS = False
         ra_min, ra_max, dec_min, dec_max = self.get_image_bounds(wcs)
-
         # Get the exposure time
         #self.header = fits.getheader(file)
         #exp_time = self.header['EXPTIME']
@@ -90,7 +89,7 @@ class SDSS_catalog:
             i  = i + 1
             mag_max = mag_max + 1
             sdss_query = f"""
-            SELECT top {num_sources} p.objID, p.ra, p.dec, p.{filter}, p.clean
+            SELECT top {num_sources} p.objID, p.ra, p.dec, p.{filter}, p.clean, p.r, p.g, p.i
             FROM PhotoObj p
             JOIN dbo.fGetObjFromRectEq({ra_min+0.03}, {dec_min+0.03}, {ra_max-0.03}, {dec_max-0.03}) r ON p.objID = r.objID
             WHERE p.clean = 1 AND p.{filter} > {mag_max - (3 + i)} AND p.{filter} < {mag_max}
@@ -136,7 +135,7 @@ class SDSS_catalog:
     
         # Query Pan-STARRS catalog
         mag_column = f"{filter}mag"
-        v = Vizier(columns=['objID', 'RAJ2000', 'DEJ2000', mag_column, 'gmag', 'rmag'], 
+        v = Vizier(columns=['objID', 'RAJ2000', 'DEJ2000', mag_column, 'gmag', 'rmag', 'imag'], 
                    column_filters={mag_column: f">{mag_max - 2} & <{mag_max}"}, 
                    row_limit=num_sources*100)
         result = v.query_region(region, width=width*u.deg, height=height*u.deg, catalog='II/349/ps1')
@@ -154,7 +153,7 @@ class SDSS_catalog:
         while top_result is not None and len(top_result) < 100 and mag_max < mag_limit:
             mag_max = mag_max + 1
             i = i + 1
-            v = Vizier(columns=['objID', 'RAJ2000', 'DEJ2000', mag_column, 'gmag', 'rmag'], 
+            v = Vizier(columns=['objID', 'RAJ2000', 'DEJ2000', mag_column, 'gmag', 'rmag', 'imag'], 
                        column_filters={mag_column: f">{mag_max - (3 + i)} & <{mag_max}"}, 
                        row_limit=num_sources*100)
             result = v.query_region(region, width=width*u.deg, height=height*u.deg, catalog='II/349/ps1')
@@ -290,22 +289,35 @@ class ImageProcessor:
     def sdss_check(self, filter=None):
         if filter is None:
             filter = self.header.get('FILTER').lower()
+        if filter == 'B':
+            filter = 'g'
+        if filter == 'V':
+            filter = 'g'
+        if filter == 'R':
+            filter = 'r'
+        if filter == 'I':
+            filter = 'i'
         catalog, PS = self.sdss_catalog.get_catalog(self.wcs, filter=filter)
         sdss_sources = []
         color = []
+        colorri = []
 
         for row in catalog:
             try:
-                ra, dec, mag, clean = row['ra'], row['dec'], row[filter], row['clean']
+                ra, dec, mag, clean, rmag, gmag, imag = row['ra'], row['dec'], row[filter], row['clean'], row['r'], row['g'], row['i']
                 if clean == 1:
-                    sdss_sources.append((ra, dec, mag))
+                    sdss_sources.append((ra, dec, mag, gmag, rmag))
+                    color.append(gmag - rmag)
+                    colorri.append(rmag - imag)
             except:
                 mag_column = f"{filter}mag"
-                ra, dec, mag, gmag, rmag = row['RAJ2000'], row['DEJ2000'], row[mag_column], row['gmag'], row['rmag']
-                sdss_sources.append((ra, dec, mag))
+                ra, dec, mag, gmag, rmag, imag= row['RAJ2000'], row['DEJ2000'], row[mag_column], row['gmag'], row['rmag'], row['imag']
+                sdss_sources.append((ra, dec, mag, gmag, rmag))
                 color.append(gmag - rmag)
-        
-        return sdss_sources, color, PS
+                colorri.append(rmag - imag)
+                #ricolor.append(rmag - imag)
+
+        return sdss_sources, color, colorri, PS
 
     def ap_phot_mags(self, pixel_positions):
 
@@ -352,8 +364,9 @@ class ImageProcessor:
             mean, _, _ = sigma_clipped_stats(sky_data_1d, sigma=3.0)
             bkgmean.append(mean)
 
-        egain = self.header['EGAIN']
-        gain = 4*egain
+        #egain = self.header['EGAIN']
+        #gain = 4*egain
+        gain = 0.27
 
         bkgmean = np.array(bkgmean)
         ap_flux = gain*phot_table['aperture_sum'] - (gain*bkgmean * apertures.area)
@@ -365,14 +378,18 @@ class ImageProcessor:
 
     def zmag_calc(self):
         star_positions = self.find_sources()
-        filter = self.header.get('FILTER').lower()
-        sdss_data, color, PS = self.sdss_check(filter=filter)
+        filter = self.header.get('FILTER')
+        sdss_data, color, colorri, PS = self.sdss_check(filter=filter)
 
         try:
-            sdss_positions = np.array([[ra, dec] for ra, dec, mag in sdss_data])
-            sdss_mags = np.array([mag for ra, dec, mag in sdss_data])
+            sdss_positions = np.array([[ra, dec] for ra, dec, mag, g, r in sdss_data])
+            sdss_mags = np.array([mag for ra, dec, mag, g, r in sdss_data])
             color = np.array([c for c in color])
-            if (color.size > 0):
+            colorri = np.array([c for c in colorri])
+            gee = np.array([g for ra, dec, mag, g, r in sdss_data])
+            arr = np.array([r for ra, dec, mag, g, r in sdss_data])
+    
+            if (PS == True):
                 if (filter == 'g'):
                     sdss_mags = sdss_mags + 0.014 + 0.162*color
                 elif (filter == 'r'):
@@ -380,7 +397,15 @@ class ImageProcessor:
                 elif (filter == 'i'):
                     sdss_mags = sdss_mags - 0.004 + 0.020*color
                 elif (filter == 'z'):
-                    sdss_mags = sdss_mags + 0.013 - 0.050*color  
+                    sdss_mags = sdss_mags + 0.013 - 0.050*color 
+            if (self.header['FILTER'] == 'B'):
+                sdss_mags = sdss_mags + 0.21 + 0.39*color
+            if (self.header['FILTER'] == 'V'):
+                sdss_mags = sdss_mags - 0.01 - 0.59*color
+            if (self.header['FILTER'] == 'R'):
+                sdss_mags = gee + 0.21 + 0.39*color - 1.09*colorri -0.22
+            if (self.header['FILTER'] == 'I'):
+                sdss_mags = gee + 0.21 + 0.39*color - 1.09*colorri -0.22 - colorri - 0.21
         except:
             print('No SDSS sources found')
             return 'SDSS Error - no sources found'
