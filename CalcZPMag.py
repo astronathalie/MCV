@@ -54,7 +54,7 @@ class SDSS_catalog:
 
     def get_catalog(self, wcs, filter, mag_range=(12, 16), num_sources=200, mag_limit=20):
         # Get the bounds of the image in sky coordinates
-        PS = False
+        PS = self.PS
         ra_min, ra_max, dec_min, dec_max = self.get_image_bounds(wcs)
 
         # Get the exposure time
@@ -113,8 +113,8 @@ class SDSS_catalog:
         ra_min, ra_max, dec_min, dec_max = self.get_image_bounds(wcs)
         
         # Get the exposure time
-        self.header = fits.getheader(file)
-        exp_time = self.header['EXPTIME']
+        #self.header = fits.getheader(self.image_path)
+        #exp_time = self.header['EXPTIME']
 
         # Get the magnitude range and mag limits
         #if exp_time < 30:
@@ -496,7 +496,7 @@ class ImageProcessor:
         return calc_zmag, calc_zmag_err, lin_fit_zmag, lin_fit_zmag_err, sdss_positions
 
     def plot_stars(self, pixel_positions):
-        self.header = fits.getheader(file)
+        self.header = fits.getheader(self.image_path)
         FWHM = float(str(self.header['FWHM']))
         apertures = CircularAperture(pixel_positions, r=FWHM * 2.5)
         #sdss_data, color = self.sdss_check()
@@ -521,7 +521,7 @@ if __name__ == "__main__":
     parser.add_argument("--show", action="store_true", help="Display plots of detected sources.")
     parser.add_argument("--write", action="store_true", help="Write the ZPMAG to the FITS header.")
     parser.add_argument("--plotZP", action="store_true", help="Plot the SDSS magnitude vs the ZPMAG.")
-    parser.add_argument("--PS1", action="store_true", help="Use Pan-STARRS instead of SDSS.")
+    parser.add_argument("--PS1", action="store_true", default=False, help="Use Pan-STARRS instead of SDSS.")
     parser.add_argument("--rewrite", action="store_true", help="Rewrite over a previous ZPMAG file with the new ZPMAG value.")
     parser.add_argument("--writeAVG", action="store_true", help="Write the average ZPMAG to the FITS header.")
     parser.add_argument("--rewriteAVG", action="store_true", help="Rewrite over a previous ZPMAG file with the new average ZPMAG value.")
@@ -543,10 +543,13 @@ if __name__ == "__main__":
         for file in files:
             im = fits.open(file)
             print(f"Calculating ZPMAG for {file}")
-            processor = ImageProcessor(file)
-
-            fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
-            calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
+            processor = ImageProcessor(file, PS=args.PS1)
+            try:
+                fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
+                calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
+            except ValueError as e:
+                print(f"Error calculating ZPMAG: {e}")
+                continue
             if args.show:
                 _, _, _, _, stars = processor.zmag_calc()
                 processor.plot_stars(stars)
@@ -560,10 +563,13 @@ if __name__ == "__main__":
         for file in files:
             im = fits.open(file)
             print(f"Calculating ZPMAG for {file}")
-            processor = ImageProcessor(file)
-
-            fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
-            calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
+            processor = ImageProcessor(file, PS=args.PS1)
+            try:
+                fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
+                calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
+            except ValueError as e:
+                print(f"Error calculating ZPMAG: {e}")
+                continue
             if args.show:
                 _, _, _, _, stars = processor.zmag_calc()
                 processor.plot_stars(stars)
@@ -583,7 +589,7 @@ if __name__ == "__main__":
             else:
                 im = fits.open(file)
                 print(f"Calculating ZPMAG for {file}")
-                processor = ImageProcessor(file)
+                processor = ImageProcessor(file, PS=args.PS1)
 
                 fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
                 calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
