@@ -457,6 +457,8 @@ class ImageProcessor:
         zmaglist = zmaglist[err_mask]
         ap_maglist = ap_maglist[err_mask]
         sdss_maglist = sdss_maglist[err_mask]
+        if len(ap_maglist) < 2 or len(sdss_maglist) < 2:
+            raise ValueError("Not enough points to fit a line")
         fit = np.polyfit(ap_maglist, sdss_maglist, 1)
         p = np.poly1d(fit)
         # calc the error on the fit
@@ -473,7 +475,8 @@ class ImageProcessor:
                         zmaglist_new.append(sdss_maglist[i] - ap_maglist[i])
                         sdss_maglist_new.append(sdss_maglist[i])
                         ap_maglist_new.append(ap_maglist[i])
-
+            if len(ap_maglist) < 2 or len(sdss_maglist) < 2:
+                raise ValueError("Not enough points to fit a line")
             fit = np.polyfit(ap_maglist_new, sdss_maglist_new, 1)
             p = np.poly1d(fit)
             fiterr = np.sqrt(np.sum((p(ap_maglist_new) - sdss_maglist_new)**2) / (len(sdss_maglist_new) - 2))
@@ -489,6 +492,8 @@ class ImageProcessor:
         sdss_maglist = np.array(sdss_maglist_new)
         ap_maglist = ap_maglist[(diff < 2*zmag_std)]
         sdss_maglist = sdss_maglist[(diff < 2*zmag_std)]
+        if len(ap_maglist) < 2 or len(sdss_maglist) < 2:
+            raise ValueError("Not enough points to fit a line")
         fit = np.polyfit(ap_maglist, sdss_maglist, 1)
         p = np.poly1d(fit)
         fiterr = np.sqrt(np.sum((p(ap_maglist) - sdss_maglist)**2) / (len(sdss_maglist) - 2))
@@ -574,6 +579,9 @@ if __name__ == "__main__":
                 calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
             except:
                 print("Error calculating ZPMAG, skipping file.")
+                with fits.open(file, mode="update") as hdul:
+                    hdul[0].header.remove('ZPMAG', ignore_missing_end=True)
+                    hdul.flush()
                 continue
             if args.show:
                 _, _, _, _, stars = processor.zmag_calc()
