@@ -580,7 +580,7 @@ if __name__ == "__main__":
             except:
                 print("Error calculating ZPMAG, skipping file.")
                 with fits.open(file, mode="update") as hdul:
-                    hdul[0].header.remove('ZPMAG', ignore_missing_end=True)
+                    hdul[0].header.pop('ZPMAG', None)
                     hdul.flush()
                 continue
             if args.show:
@@ -602,6 +602,9 @@ if __name__ == "__main__":
                 calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
             except:
                 print("Error calculating ZPMAG, skipping file.")
+                with fits.open(file, mode="update") as hdul:
+                    hdul[0].header.pop('ZPMAG', None)
+                    hdul.flush()
                 continue
             if args.show:
                 _, _, _, _, stars = processor.zmag_calc()
