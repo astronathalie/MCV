@@ -493,12 +493,12 @@ class ImageProcessor:
         ap_maglist = ap_maglist[(diff < 2*zmag_std)]
         sdss_maglist = sdss_maglist[(diff < 2*zmag_std)]
         if len(ap_maglist) < 2 or len(sdss_maglist) < 2:
-            raise ValueError("Not enough points to fit a line")
+            raise ValueError("Not enough points to fit a line")        
         fit = np.polyfit(ap_maglist, sdss_maglist, 1)
         p = np.poly1d(fit)
         fiterr = np.sqrt(np.sum((p(ap_maglist) - sdss_maglist)**2) / (len(sdss_maglist) - 2))
 
-        if len(zmaglist_new) < 5:
+        if len(zmaglist_new) < 3:
             print('Not enough sources to calculate ZMAG')
             return 'Not enough sources to calculate ZMAG'
 
@@ -625,22 +625,26 @@ if __name__ == "__main__":
             else:
                 im = fits.open(file)
                 print(f"Calculating ZPMAG for {file}")
-                processor = ImageProcessor(file, PS=args.PS1)
+                try:
+                    processor = ImageProcessor(file, PS=args.PS1)
 
-                fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
-                calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
-                if args.show:
-                    _, _, _, _, stars = processor.zmag_calc()
-                    processor.plot_stars(stars)
-                if args.write:
-                    with fits.open(file, mode="update") as hdul:
-                        hdul[0].header['ZPMAG'] = lin_fit_zmag
-                        hdul[0].header['Z_ERR'] = fit_err
-                if args.writeAVG:
-                    with fits.open(file, mode="update") as hdul:
-                        hdul[0].header['ZPMAG'] = calc_zmag
-                        hdul[0].header['Z_ERR'] = zmag_err
-
+                    fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
+                    calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
+                    if args.show:
+                        _, _, _, _, stars = processor.zmag_calc()
+                        processor.plot_stars(stars)
+                    if args.write:
+                        with fits.open(file, mode="update") as hdul:
+                            hdul[0].header['ZPMAG'] = lin_fit_zmag
+                            hdul[0].header['Z_ERR'] = fit_err
+                    if args.writeAVG:
+                        with fits.open(file, mode="update") as hdul:
+                            hdul[0].header['ZPMAG'] = calc_zmag
+                            hdul[0].header['Z_ERR'] = zmag_err
+                except Exception as e:
+                    # catch *any* failure in steps 1–3 and skip
+                    print(f"   ⚠️  Skipping {os.path.basename(file)}: {e}")
+                    continue
                 print(f"Average ZMAG: {calc_zmag} ± {zmag_err}")
                 print(f"Linear Fit ZMAG: {lin_fit_zmag} ± {fit_err}")
     
