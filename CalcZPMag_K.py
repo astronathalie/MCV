@@ -71,6 +71,9 @@ class SDSS_catalog:
         mag_max = max(mag_range)
         mag_limit = mag_limit
 
+        if filter == 'b':
+            filter = 'g'
+
         sdss_query = f"""
         SELECT top {num_sources} p.objID, p.ra, p.dec, p.{filter}, p.clean
         FROM PhotoObj p
