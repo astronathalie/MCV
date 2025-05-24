@@ -22,8 +22,9 @@ import math
 from scipy.optimize import curve_fit
 
 class SDSS_catalog:
-    def __init__(self, PS=False):
+    def __init__(self, PS=False, APASS=False):
         self.PS = PS
+        self.APASS = APASS
         pass
 
     def get_image_bounds(self, wcs):
@@ -54,8 +55,9 @@ class SDSS_catalog:
 
     def get_catalog(self, wcs, filter, mag_range=(12, 16), num_sources=200, mag_limit=20):
         # Get the bounds of the image in sky coordinates
-        PS = self.PS
         ra_min, ra_max, dec_min, dec_max = self.get_image_bounds(wcs)
+        PS = self.PS
+        APASS = self.APASS
         # Get the exposure time
         #self.header = fits.getheader(file)
         #exp_time = self.header['EXPTIME']
@@ -84,6 +86,9 @@ class SDSS_catalog:
         print(sdss_query)
 
         job = SDSS.query_sql(sdss_query)
+        if self.APASS:
+            APASS = True
+            job = None
         if self.PS:
             job = None
         # if the job is not empty but is less than 100 sources, try to get more sources iterate over this loop
@@ -101,14 +106,21 @@ class SDSS_catalog:
             print(sdss_query)
             job = SDSS.query_sql(sdss_query)
 
-        if job is None:
+        if job is None and APASS == False:
             PS = True
             # If the query fails, try querying Vizer Pan-STARRS instead
             print("SDSS query failed, trying Pan-STARRS")
             job = self.get_pan_starrs_catalog(wcs, filter, mag_range, num_sources=500)
             #print(job)
+        
+        if job is None and APASS == True:
+            PS = False
+            # If the query fails, try querying Vizer APASS instead
+            print("SDSS query failed, trying APASS")
+            job = self.get_APASS_catalog(wcs, filter, mag_range, num_sources=500)
+            #print(job)
 
-        return job, PS
+        return job, PS, APASS
 
     def get_pan_starrs_catalog(self, wcs, filter, mag_range=(12, 16), num_sources=300, mag_limit=20):
         # Get the bounds of the image in sky coordinates
@@ -167,9 +179,53 @@ class SDSS_catalog:
 
         return top_result
 
+    def get_APASS_catalog(self, wcs, filter, mag_range=(12, 16), num_sources=20, mag_limit=20):
+        # Get the bounds of the image in sky coordinates
+        ra_min, ra_max, dec_min, dec_max = self.get_image_bounds(wcs)
+        
+        # Get the exposure time
+        #self.header = fits.getheader(self.image_path)
+        #exp_time = self.header['EXPTIME']
+
+        # Get the magnitude range and mag limits
+        #if exp_time < 30:
+        #    mag_min = min(mag_range)
+        #elif exp_time < 120:
+        #    mag_min = min(mag_range) + 1
+        #else:
+        #    mag_min = min(mag_range) + 2
+
+        mag_max = max(mag_range)
+        mag_limit = mag_limit
+
+        # Define the region to query with a 0.05 degree buffer
+        width = (ra_max - ra_min) - 0.05
+        height = (dec_max - dec_min) - 0.05
+        ra_center = (ra_max + ra_min) / 2
+        dec_center = (dec_max + dec_min) / 2
+        region = SkyCoord(ra_center, dec_center, unit=(u.deg, u.deg), frame='icrs')
+    
+        # Query APASS catalog
+        v = Vizier(columns=['RAJ2000', 'DEJ2000', 'Bmag', 'Vmag', "g'mag", "r'mag", "i'mag"],  
+                   column_filters={'V': f"<{mag_max}"}, 
+                   row_limit=num_sources*100)
+        result = v.query_region(region, width=width*u.deg, height=height*u.deg, catalog='II/336/apass9')
+        # check for nan values in any of the columns remove that row
+        for col in result[0].colnames:
+            if result[0][col].mask.any():
+                result[0].remove_rows(np.where(result[0][col].mask)[0])       
+        sorted_result = result[0].to_pandas().sort_values(by=['Vmag'], ascending=True)
+        top_sources = sorted_result[:num_sources]
+        
+        if len(result) == 0:
+            print("No sources found in APASS catalog.")
+            return None
+
+        return top_sources
+
 
 class ImageProcessor:
-    def __init__(self, image, PS=False):
+    def __init__(self, image, PS=False, APASS=False):
         self.image_path = image
         self.data, self.header = fits.getdata(image, header=True)
         self.wcs = WCS(self.header)  # Ensure consistent WCS assignment
@@ -178,7 +234,7 @@ class ImageProcessor:
             print("No valid WCS in header")
             #stop the program
             exit()
-        self.sdss_catalog = SDSS_catalog(PS=PS)
+        self.sdss_catalog = SDSS_catalog(PS=PS, APASS=APASS)
 
     def find_sources(self):
         mean, median, std = sigma_clipped_stats(self.data, sigma=5.0)
@@ -300,27 +356,45 @@ class ImageProcessor:
             filter = 'r'
         if filter == 'I':
             filter = 'i'
-        catalog, PS = self.sdss_catalog.get_catalog(self.wcs, filter=filter)
+        catalog, PS, APASS = self.sdss_catalog.get_catalog(self.wcs, filter=filter)
         sdss_sources = []
         color = []
         colorri = []
+        if APASS:
+            if hasattr(catalog, 'iterrows'):
+                rows = catalog.iterrows()
+            else:
+                # astropy.Table
+                rows = ((None, row) for row in catalog)
 
-        for row in catalog:
-            try:
-                ra, dec, mag, clean, rmag, gmag, imag = row['ra'], row['dec'], row[filter], row['clean'], row['r'], row['g'], row['i']
-                if clean == 1:
+            for _, row in rows:
+                ra, dec = row['RAJ2000'], row['DEJ2000']
+                if filter == 'B' or filter == 'V':
+                    mag = row.get(filter + 'mag')
+                else:
+                    mag = row.get(filter + "'mag")
+                gmag = row.get("g'mag")
+                rmag = row.get("r'mag")
+                imag = row.get("i'mag")
+                sdss_sources.append((ra, dec, mag, gmag, rmag, imag))
+                color.append(gmag - rmag)
+                colorri.append(rmag - imag)
+        else:
+            for row in catalog:
+                try:
+                    ra, dec, mag, clean, rmag, gmag, imag = row['ra'], row['dec'], row[filter], row['clean'], row['r'], row['g'], row['i']
+                    if clean == 1:
+                        sdss_sources.append((ra, dec, mag, gmag, rmag))
+                        color.append(gmag - rmag)
+                        colorri.append(rmag - imag)
+                except:
+                    mag_column = f"{filter}mag"
+                    ra, dec, mag, gmag, rmag, imag= row['RAJ2000'], row['DEJ2000'], row[mag_column], row['gmag'], row['rmag'], row['imag']
                     sdss_sources.append((ra, dec, mag, gmag, rmag))
                     color.append(gmag - rmag)
                     colorri.append(rmag - imag)
-            except:
-                mag_column = f"{filter}mag"
-                ra, dec, mag, gmag, rmag, imag= row['RAJ2000'], row['DEJ2000'], row[mag_column], row['gmag'], row['rmag'], row['imag']
-                sdss_sources.append((ra, dec, mag, gmag, rmag))
-                color.append(gmag - rmag)
-                colorri.append(rmag - imag)
-                #ricolor.append(rmag - imag)
-
-        return sdss_sources, color, colorri, PS
+                    #ricolor.append(rmag - imag)
+        return sdss_sources, color, colorri, PS, APASS
 
     def ap_phot_mags(self, pixel_positions):
 
@@ -382,39 +456,54 @@ class ImageProcessor:
     def zmag_calc(self):
         star_positions = self.find_sources()
         filter = self.header.get('FILTER')
-        sdss_data, color, colorri, PS = self.sdss_check(filter=filter)
+        sdss_data, color, colorri, PS, APASS = self.sdss_check(filter=filter)
+    
 
-        try:
-            sdss_positions = np.array([[ra, dec] for ra, dec, mag, g, r in sdss_data])
-            sdss_mags = np.array([mag for ra, dec, mag, g, r in sdss_data])
+        if (APASS == True):
+            sdss_mags = np.array([mag for ra, dec, mag, g, r, i in sdss_data])
+            sdss_positions = np.array([[ra, dec] for ra, dec, mag, g, r, i in sdss_data])
             color = np.array([c for c in color])
             colorri = np.array([c for c in colorri])
-            gee = np.array([g for ra, dec, mag, g, r in sdss_data])
-            arr = np.array([r for ra, dec, mag, g, r in sdss_data])
-    
-            if (PS == True):
-                if (filter == 'g'):
-                    sdss_mags = sdss_mags + 0.014 + 0.162*color
-                elif (filter == 'r'):
-                    sdss_mags = sdss_mags - 0.001 + 0.011*color 
-                elif (filter == 'i'):
-                    sdss_mags = sdss_mags - 0.004 + 0.020*color
-                elif (filter == 'z'):
-                    sdss_mags = sdss_mags + 0.013 - 0.050*color 
-            if (self.header['FILTER'] == 'B'):
-                sdss_mags = sdss_mags + 0.21 + 0.39*color
-            if (self.header['FILTER'] == 'V'):
-                sdss_mags = sdss_mags - 0.01 - 0.59*color
-            if (self.header['FILTER'] == 'R'):
-                sdss_mags = gee + 0.21 + 0.39*color - 1.09*colorri -0.22
-            if (self.header['FILTER'] == 'I'):
-                sdss_mags = gee + 0.21 + 0.39*color - 1.09*colorri -0.22 - colorri - 0.21
-        except:
-            print('No SDSS sources found')
-            return 'SDSS Error - no sources found'
+            gee = np.array([g for ra, dec, mag, g, r, i in sdss_data])
+            arr = np.array([r for ra, dec, mag, g, r, i in sdss_data])
+            if (filter == 'B'):
+                sdss_mags = sdss_mags
+            elif (filter == 'V'):
+                sdss_mags = sdss_mags
+            elif (filter == 'R'):
+                sdss_mags == sdss_mags-0.2936*colorri
+            elif (filter == 'I'):
+                sdss_mags == arr-1.244*colorri
+        else:
+            try:
+                sdss_positions = np.array([[ra, dec] for ra, dec, mag, g, r in sdss_data])
+                sdss_mags = np.array([mag for ra, dec, mag, g, r in sdss_data])
+                color = np.array([c for c in color])
+                colorri = np.array([c for c in colorri])
+                gee = np.array([g for ra, dec, mag, g, r in sdss_data])
+                arr = np.array([r for ra, dec, mag, g, r in sdss_data])
+                if (PS == True):
+                    if (filter == 'g'):
+                        sdss_mags = sdss_mags + 0.014 + 0.162*color
+                    elif (filter == 'r'):
+                        sdss_mags = sdss_mags - 0.001 + 0.011*color 
+                    elif (filter == 'i'):
+                        sdss_mags = sdss_mags - 0.004 + 0.020*color
+                    elif (filter == 'z'):
+                        sdss_mags = sdss_mags + 0.013 - 0.050*color 
+                if (self.header['FILTER'] == 'B'):
+                    sdss_mags = sdss_mags + 0.21 + 0.39*color
+                if (self.header['FILTER'] == 'V'):
+                    sdss_mags = sdss_mags - 0.01 - 0.59*color
+                if (self.header['FILTER'] == 'R'):
+                    sdss_mags = gee + 0.21 + 0.39*color - 1.09*colorri -0.22
+                if (self.header['FILTER'] == 'I'):
+                    sdss_mags = gee + 0.21 + 0.39*color - 1.09*colorri -0.22 - colorri - 0.21
+            except:
+                print('No SDSS sources found')
+                return 'SDSS Error - no sources found'
 
         source_positions = self.wcs.all_world2pix(sdss_positions, 0)
-        #print("Pixel Positions Before Filtering:", source_positions)
         # Filter valid pixel positions
         height, width = self.data.shape
         valid_pixels = (source_positions[:, 0] >= 0) & (source_positions[:, 0] < width) & \
@@ -558,6 +647,7 @@ if __name__ == "__main__":
     parser.add_argument("--rewrite", action="store_true", help="Rewrite over a previous ZPMAG file with the new ZPMAG value.")
     parser.add_argument("--writeAVG", action="store_true", help="Write the average ZPMAG to the FITS header.")
     parser.add_argument("--rewriteAVG", action="store_true", help="Rewrite over a previous ZPMAG file with the new average ZPMAG value.")
+    parser.add_argument("--APASS", action="store_true", help="Use APASS catalog instead of SDSS.")
     args = parser.parse_args()
 
     file_dir = os.path.dirname(args.path)
@@ -576,7 +666,7 @@ if __name__ == "__main__":
         for file in files:
             im = fits.open(file)
             print(f"Calculating ZPMAG for {file}")
-            processor = ImageProcessor(file, PS=args.PS1)
+            processor = ImageProcessor(file, PS=args.PS1, APASS=args.APASS)
             try:
                 fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
                 calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
@@ -599,7 +689,7 @@ if __name__ == "__main__":
         for file in files:
             im = fits.open(file)
             print(f"Calculating ZPMAG for {file}")
-            processor = ImageProcessor(file, PS=args.PS1)
+            processor = ImageProcessor(file, PS=args.PS1, APASS=args.APASS)
             try:
                 fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
                 calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
@@ -629,7 +719,7 @@ if __name__ == "__main__":
                 im = fits.open(file)
                 print(f"Calculating ZPMAG for {file}")
                 try:
-                    processor = ImageProcessor(file, PS=args.PS1)
+                    processor = ImageProcessor(file, PS=args.PS1, APASS=args.APASS)
 
                     fwhm_list, fwhm_median = processor.compute_fwhm_pixel_method(processor.find_sources())
                     calc_zmag, zmag_err, lin_fit_zmag, fit_err, _ = processor.zmag_calc()
