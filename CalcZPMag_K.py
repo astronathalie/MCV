@@ -349,7 +349,6 @@ class ImageProcessor:
         return fwhm_list, fwhm_median
 
     def sdss_check(self, filter=None, APASS=False):
-    def sdss_check(self, filter=None, APASS=False):
         if filter is None:
             filter = self.header.get('FILTER').lower()
         if filter == 'B' and APASS==False:
