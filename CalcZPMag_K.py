@@ -73,38 +73,41 @@ class SDSS_catalog:
         mag_max = max(mag_range)
         mag_limit = mag_limit
 
-        if filter == 'b':
-            filter = 'g'
-
-        sdss_query = f"""
-        SELECT top {num_sources} p.objID, p.ra, p.dec, p.{filter}, p.clean
-        FROM PhotoObj p
-        JOIN dbo.fGetObjFromRectEq({ra_min+0.03}, {dec_min+0.03}, {ra_max-0.03}, {dec_max-0.03}) r ON p.objID = r.objID
-        WHERE p.clean = 1 AND p.{filter} > {mag_max - 2} AND p.{filter} < {mag_max}
-        ORDER BY p.{filter} ASC
-        """
-        print(sdss_query)
-
-        job = SDSS.query_sql(sdss_query)
         if self.APASS:
             APASS = True
             job = None
         if self.PS:
             job = None
-        # if the job is not empty but is less than 100 sources, try to get more sources iterate over this loop
-        i = 0
-        while job is not None and len(job) < 100 and mag_max < mag_limit:
-            i  = i + 1
-            mag_max = mag_max + 1
+        if job is not None:
+            if filter == 'B':
+                filter = 'g'
+            if filter == 'V':
+                filter = 'g'
+
             sdss_query = f"""
-            SELECT top {num_sources} p.objID, p.ra, p.dec, p.{filter}, p.clean, p.r, p.g, p.i
+            SELECT top {num_sources} p.objID, p.ra, p.dec, p.{filter}, p.clean
             FROM PhotoObj p
             JOIN dbo.fGetObjFromRectEq({ra_min+0.03}, {dec_min+0.03}, {ra_max-0.03}, {dec_max-0.03}) r ON p.objID = r.objID
-            WHERE p.clean = 1 AND p.{filter} > {mag_max - (3 + i)} AND p.{filter} < {mag_max}
+            WHERE p.clean = 1 AND p.{filter} > {mag_max - 2} AND p.{filter} < {mag_max}
             ORDER BY p.{filter} ASC
             """
             print(sdss_query)
+
             job = SDSS.query_sql(sdss_query)
+            # if the job is not empty but is less than 100 sources, try to get more sources iterate over this loop
+            i = 0
+            while job is not None and len(job) < 100 and mag_max < mag_limit:
+                i  = i + 1
+                mag_max = mag_max + 1
+                sdss_query = f"""
+                SELECT top {num_sources} p.objID, p.ra, p.dec, p.{filter}, p.clean, p.r, p.g, p.i
+                FROM PhotoObj p
+                JOIN dbo.fGetObjFromRectEq({ra_min+0.03}, {dec_min+0.03}, {ra_max-0.03}, {dec_max-0.03}) r ON p.objID = r.objID
+                WHERE p.clean = 1 AND p.{filter} > {mag_max - (3 + i)} AND p.{filter} < {mag_max}
+                ORDER BY p.{filter} ASC
+                """
+                print(sdss_query)
+                job = SDSS.query_sql(sdss_query)
 
         if job is None and APASS == False:
             PS = True
@@ -346,11 +349,12 @@ class ImageProcessor:
         return fwhm_list, fwhm_median
 
     def sdss_check(self, filter=None, APASS=False):
+    def sdss_check(self, filter=None, APASS=False):
         if filter is None:
             filter = self.header.get('FILTER').lower()
-        if filter == 'B' and APASS == False:
+        if filter == 'B' and APASS==False:
             filter = 'g'
-        if filter == 'V' and APASS == False:
+        if filter == 'V' and APASS==False:
             filter = 'g'
         if filter == 'R':
             filter = 'r'
@@ -457,6 +461,7 @@ class ImageProcessor:
         star_positions = self.find_sources()
         filter = self.header.get('FILTER')
         sdss_data, color, colorri, PS, APASS = self.sdss_check(filter=filter, APASS=args.APASS)
+        sdss_data, color, colorri, PS, APASS = self.sdss_check(filter=filter, APASS=args.APASS)
     
 
         if (APASS == True):
@@ -472,7 +477,9 @@ class ImageProcessor:
                 sdss_mags = sdss_mags
             elif (filter == 'R'):
                 sdss_mags == sdss_mags-0.2936*colorri-0.1439
+                sdss_mags == sdss_mags-0.2936*colorri-0.1439
             elif (filter == 'I'):
+                sdss_mags == arr-1.244*colorri-0.3820
                 sdss_mags == arr-1.244*colorri-0.3820
         else:
             try:
