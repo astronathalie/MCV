@@ -348,9 +348,9 @@ class ImageProcessor:
     def sdss_check(self, filter=None):
         if filter is None:
             filter = self.header.get('FILTER').lower()
-        if filter == 'B':
+        if filter == 'B' and APASS == False:
             filter = 'g'
-        if filter == 'V':
+        if filter == 'V' and APASS == False:
             filter = 'g'
         if filter == 'R':
             filter = 'r'
@@ -471,9 +471,9 @@ class ImageProcessor:
             elif (filter == 'V'):
                 sdss_mags = sdss_mags
             elif (filter == 'R'):
-                sdss_mags == sdss_mags-0.2936*colorri
+                sdss_mags == sdss_mags-0.2936*colorri-0.1439
             elif (filter == 'I'):
-                sdss_mags == arr-1.244*colorri
+                sdss_mags == arr-1.244*colorri-0.3820
         else:
             try:
                 sdss_positions = np.array([[ra, dec] for ra, dec, mag, g, r in sdss_data])
