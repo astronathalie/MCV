@@ -345,7 +345,7 @@ class ImageProcessor:
 
         return fwhm_list, fwhm_median
 
-    def sdss_check(self, filter=None):
+    def sdss_check(self, filter=None, APASS=False):
         if filter is None:
             filter = self.header.get('FILTER').lower()
         if filter == 'B' and APASS == False:
@@ -456,7 +456,7 @@ class ImageProcessor:
     def zmag_calc(self):
         star_positions = self.find_sources()
         filter = self.header.get('FILTER')
-        sdss_data, color, colorri, PS, APASS = self.sdss_check(filter=filter)
+        sdss_data, color, colorri, PS, APASS = self.sdss_check(filter=filter, APASS=args.APASS)
     
 
         if (APASS == True):
