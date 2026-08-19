@@ -1417,10 +1417,10 @@ class LightCurvePlotter:
             plt.title(title)
         title = title.replace(' ', '_')
         if phase:
-            plt.savefig(save_path + "/"  + title +"_" + observer + "_phased.png")
+            plt.savefig(save_path + "/"  + title +"_" + "_phased.png")
             plt.show()
         else:
-            plt.savefig(save_path + "/" + title +"_" + observer + "_unphased.png")
+            plt.savefig(save_path + "/" + title +"_" + "_unphased.png")
             plt.show()
 
 
