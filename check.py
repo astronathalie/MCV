@@ -68,7 +68,7 @@ def get_target_coordinates(TARGET_NAME, REFERENCE_IMAGE, non_sid=False, non_sid_
     else:
         try:
             hdr = fits.getheader(REFERENCE_IMAGE, ext=0)
-            img_jd=hdr['JD']
+            img_jd=(Time(hdr['UT'], scale='utc').jd + hdr['EXPTIME']/(2*86400)) if 'UT' in hdr else (Time(hdr['DATE-OBS']).jd - (hdr['EXPTIME']/2 + 1.1)/86400)  # mid-exposure; pyscope JD = end of readout
             non_sid_obj=Horizons(id=non_sid_id, location=non_sid_loc, epochs=img_jd)
             eph=non_sid_obj.ephemerides()
             target_ra=eph['RA'][0]
@@ -76,7 +76,7 @@ def get_target_coordinates(TARGET_NAME, REFERENCE_IMAGE, non_sid=False, non_sid_
             src = coord.SkyCoord(target_ra, target_dec, unit="deg")
         except Exception:
             hdr = fits.getheader(REFERENCE_IMAGE, ext=1)
-            img_jd=hdr['JD']
+            img_jd=(Time(hdr['UT'], scale='utc').jd + hdr['EXPTIME']/(2*86400)) if 'UT' in hdr else (Time(hdr['DATE-OBS']).jd - (hdr['EXPTIME']/2 + 1.1)/86400)  # mid-exposure; pyscope JD = end of readout
             non_sid_obj=Horizons(id=non_sid_id, location=non_sid_loc, epochs=img_jd)
             eph=non_sid_obj.ephemerides()
             target_ra=eph['RA'][0]

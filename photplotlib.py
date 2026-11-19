@@ -91,6 +91,29 @@ class PhotometryPipeline:
             self.gain = 4 * egain
         return hdr
 
+    def _mid_time(self, hdr):
+        """Mid-exposure time as an astropy Time (UTC).
+        pyscope (RLMT/MACRO) headers: UT = true exposure start; DATE-OBS, JD, MJD, TELUT
+        are written after readout (~EXPTIME + ~1 s after start), despite the DATE-OBS comment.
+        The filename/BLKSTRT is the *scheduled* block start and is not used."""
+        exptime = float(hdr['EXPTIME'])
+        if 'UT' in hdr:
+            start = Time(hdr['UT'], scale='utc')
+        else:
+            # fallback: back out exposure + ~1.1 s readout from the end-of-readout stamp
+            start = Time(hdr['DATE-OBS'], scale='utc') - (exptime + 1.1) * u.s
+        return start + (exptime / 2) * u.s
+
+    def _bjd_tdb(self, hdr, target_coord):
+        """BJD_TDB at mid-exposure for target_coord (SkyCoord), using the site in the header."""
+        t = self._mid_time(hdr)
+        if 'TELLAT' in hdr and 'TELLONG' in hdr:
+            site = coord.EarthLocation(lat=float(hdr['TELLAT']) * u.deg, lon=float(hdr['TELLONG']) * u.deg)
+        else:  # RLMT, Winer Observatory
+            site = coord.EarthLocation(lat=31.6656 * u.deg, lon=-110.6019 * u.deg, height=1515 * u.m)
+        t = Time(t, location=site)
+        return (t.tdb + t.light_travel_time(target_coord, 'barycentric')).jd
+
     def perform_phot(self, filt,
                      save=True,
                      plot=True,
@@ -150,7 +173,7 @@ class PhotometryPipeline:
         for im in images:
             hdr = self._read_header(im)
             exptime = hdr['EXPTIME']
-            jd = hdr['JD'] + exptime/(2*86400)
+            jd = self._mid_time(hdr).jd  # true mid-exposure (pyscope DATE-OBS/JD = end of readout)
             if non_sidereal:
                 non_sid_obj=Horizons(id=non_sid_id, location=non_sid_loc, epochs=jd)
                 eph=non_sid_obj.ephemerides()
@@ -173,9 +196,9 @@ class PhotometryPipeline:
                 exptime = hdr['EXPTIME']
                 exptimedays = exptime/(24*3600)
                 addjd = exptimedays/2
-                jd = hdr['HJD'] + addjd
+                jd = self._bjd_tdb(hdr, SkyCoord(*coords[0], unit='deg'))  # HJD flag now returns BJD_TDB
             else:
-                jd = hdr['JD'] + exptime/(2*86400)
+                jd = self._mid_time(hdr).jd  # true mid-exposure (pyscope DATE-OBS/JD = end of readout)
             file_results = {'file': im, 'Julian_Date': jd}
             sigclip = SigmaClip(sigma=3., maxiters=10)
             skip_file = False
@@ -312,7 +335,7 @@ class PhotometryPipeline:
             if not skip_file:
                 all_results.append(file_results)
             if skip_file:
-                print(f"Skipping {im} due to negative !, image should be inspected.")
+                print(f"Skipping {im} due to negative source sum on star {i}!, image should be inspected.")
                 continue
 
         # Convert the results to a DataFrame for easy analysis
@@ -440,8 +463,8 @@ class PhotometryPipeline:
             exptime = hdr['EXPTIME']
             exptimedays = exptime/(24*3600)
             addjd = exptimedays/2
-            jd = hdr['JD']
-            file_results = {'file': im, 'Julian_Date': (jd+addjd)}
+            jd = self._mid_time(hdr).jd  # true mid-exposure (pyscope DATE-OBS/JD = end of readout)
+            file_results = {'file': im, 'Julian_Date': (jd)}
 
             #Make a 2D background model of the image
             # bkg_estimator = MedianBackground()
@@ -716,7 +739,7 @@ class PhotometryPipeline:
         for im in images:
             hdr = self._read_header(im)
             exptime = hdr['EXPTIME']
-            jd = hdr['JD'] + exptime/(2*86400)
+            jd = self._mid_time(hdr).jd  # true mid-exposure (pyscope DATE-OBS/JD = end of readout)
             if non_sidereal:
                 non_sid_obj=Horizons(id=non_sid_id, location=non_sid_loc, epochs=jd)
                 eph=non_sid_obj.ephemerides()
@@ -901,7 +924,7 @@ class PhotometryPipeline:
 
             # Append the results for this file to the list of all results
             if skip_file:
-                print(f"Skipping {im} due to negative , image should be inspected.")
+                print(f"Skipping {im} due to negative source sum on star {i}, image should be inspected.")
                 continue
             else:
                 # Append the results for this file to the list of all results
@@ -1074,10 +1097,10 @@ class PhotometryPipeline:
                 print('Saving reference star coordinates to', + target_name + '_ref_star_coords.csv')
             if HJD:
                 exptime = hdr['EXPTIME']
-                jd = hdr['HJD'] + exptime/(2*86400)
+                jd = self._bjd_tdb(hdr, SkyCoord(*coords[0], unit='deg'))  # HJD flag now returns BJD_TDB
             else:
                 exptime = hdr['EXPTIME']
-                jd = hdr['JD'] + exptime/(2*86400)
+                jd = self._mid_time(hdr).jd  # true mid-exposure (pyscope DATE-OBS/JD = end of readout)
             file_results = {'file': im, 'Julian_Date': jd}
             sigclip = SigmaClip(sigma=3., maxiters=10)
             skip_file = False
