@@ -121,8 +121,8 @@ def find_comparison_stars(target_ra, target_dec, src, REF_IMAGE_NAME, N_STARS, E
     # The candidates list is ranked by SNR. Indices shown in printout above.
     #
     # Option A: exclude specific stars by index, auto-fill from next best
-    EXCLUDE = [1,4,5,6,7]
-    comp_stars = [c for j, c in enumerate(candidates[:N_STARS + len(EXCLUDE)]) if j not in EXCLUDE][:N_STARS]
+    # EXCLUDE = [1,4,5,6,7]
+    # comp_stars = [c for j, c in enumerate(candidates[:N_STARS + len(EXCLUDE)]) if j not in EXCLUDE][:N_STARS]
     #
     # Option B: hand-pick which candidates to use
     # USE = [0, 1, 3, 5, 7]
